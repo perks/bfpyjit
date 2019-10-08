@@ -3,7 +3,7 @@ import sys
 from itertools import accumulate
 from collections import defaultdict
 
-DEBUG = True
+DEBUG = False
 
 """
 +----+-------+---------------------+
@@ -29,6 +29,7 @@ OP_OUT = 4
 OP_IN = 5
 OP_OPEN_JMP = 6
 OP_CLOSE_JMP = 7
+OP_MOVE = 8
 
 # Used to naively go from BF -> IR type
 instruction_opcode_map = {
@@ -52,6 +53,7 @@ opcode_name_map = {
     OP_IN: "in",
     OP_OPEN_JMP: "openjmp",
     OP_CLOSE_JMP: "closejmp",
+    OP_MOVE: "move"
 }
 
 
@@ -90,6 +92,9 @@ class Opcode(object):
         name = opcode_to_string(self.op)
         return f"{name} {self.offset} {self.arg if self.arg else ''}"
 
+    def __repr__(self):
+        name = opcode_to_string(self.op)
+        return f" * op={name}\n * offset={self.offset}\n * arg={self.arg}"
 
 def cleanup(source):
     return "".join(filter(lambda x: x in instruction_opcode_map.keys(), source))
@@ -107,25 +112,32 @@ def parse(source):
     while pc < size:
         opcode = instr_to_opcode(code[pc])
 
-        if opcode in [OP_OPEN_JMP, OP_CLOSE_JMP]:
-            if opcode == OP_OPEN_JMP:
-                # If we get a loop start, record this to be popped
-                loop_starts.append(len(opcodes))
-                # Our jmp arg will be filled in when encountering the next
-                # CLOSE_JMP
-                opcodes.append(Opcode(OP_OPEN_JMP))
+        if opcode == OP_OPEN_JMP:
 
-            elif opcode == OP_CLOSE_JMP:
-                if not len(loop_starts):
-                    raise RuntimeError("Unmatched ']' found")
-                loop_start = loop_starts.pop()
-                loop_end = len(opcodes)
-                opcodes[loop_start].arg = loop_end
+            # If we are doing a loop to increment/decrement our memory ptr we
+            # can replace this with a OP_MOVE
+            if mptr != 0:
+                opcodes.append(Opcode(OP_MOVE, 0, mptr))
+                mptr = 0
+            # If we get a loop start, record this to be popped
+            loop_starts.append(len(opcodes))
+            # Our jmp arg will be filled in when encountering the next
+            # CLOSE_JMP
+            opcodes.append(Opcode(OP_OPEN_JMP))
 
-                opcodes.append(Opcode(OP_CLOSE_JMP, offset=mptr, arg=loop_start))
+        elif opcode == OP_CLOSE_JMP:
+            if not len(loop_starts):
+                raise RuntimeError("Unmatched ']' found")
+            loop_start = loop_starts.pop()
+            loop_end = len(opcodes)
+            opcodes[loop_start].arg = loop_end
+
+            opcodes.append(Opcode(OP_CLOSE_JMP, offset=mptr, arg=loop_start))
+            mptr = 0
 
         elif opcode in [OP_IN, OP_OUT]:
             opcodes.append(Opcode(opcode, offset=mptr))
+            mptr = 0
 
         # Handles the OP_RIGHT/OP_LEFT and OP_ADD/OP_SUB
         # Which are just coallescing optimizations
@@ -144,6 +156,9 @@ def parse(source):
             pc += repeats
 
         pc += 1
+
+    if len(loop_starts):
+        raise RuntimeError("Umatched '[' found")
 
     return opcodes
 
@@ -189,7 +204,10 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
 
         op = opcodes[pc]
 
-        if op.op == OP_ADD:
+        if op.op == OP_MOVE:
+            mptr += op.arg
+
+        elif op.op == OP_ADD:
             mptr += op.offset
             memory[mptr] = (memory[mptr] + op.arg) % 256
 
@@ -198,18 +216,14 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
             memory[mptr] = (memory[mptr] - op.arg) % 256
 
         elif op.op == OP_OPEN_JMP:
-            if op.offset != 0:
-                print("Whoops")
             mptr += op.offset  # should be 0 for now
             if memory[mptr] == 0:
                 pc = op.arg
 
         elif op.op == OP_CLOSE_JMP:
-            if op.offset != 0:
-                print("Whoops")
             mptr += op.offset  # should be 0 for now
             if memory[mptr] != 0:
-                pc = op.arg - 1  # - 1?
+                pc = op.arg - 1  # Because of the OP_MOVE we add
 
         elif op.op == OP_OUT:
             mptr += op.offset
@@ -233,7 +247,7 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
     return "".join(out_buffer) if buffer_output == True else None
 
 
-with open("examples/test.bf", "r") as f:
+with open("examples/sierpinski.b", "r") as f:
     x = f.read()
     src = parse(x)
     print([x.__str__() for x in src])
