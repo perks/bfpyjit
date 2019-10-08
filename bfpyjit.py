@@ -6,6 +6,7 @@ from collections import defaultdict
 DEBUG = False
 
 """
+Translations of native BF instructions -> High Level IR
 +----+-------+---------------------+
 | BF |  IR   |          C          |
 +----+-------+---------------------+
@@ -21,6 +22,7 @@ DEBUG = False
 """
 
 
+# Define constants at beginning so we can use them elsewhere
 OP_ADD = 0
 OP_SUB = 1
 OP_RIGHT = 2
@@ -30,6 +32,7 @@ OP_IN = 5
 OP_OPEN_JMP = 6
 OP_CLOSE_JMP = 7
 OP_MOVE = 8
+OP_CLEAR = 9
 
 # Used to naively go from BF -> IR type
 instruction_opcode_map = {
@@ -53,7 +56,8 @@ opcode_name_map = {
     OP_IN: "in",
     OP_OPEN_JMP: "openjmp",
     OP_CLOSE_JMP: "closejmp",
-    OP_MOVE: "move"
+    OP_MOVE: "move",
+    OP_CLEAR: "clear"
 }
 
 
@@ -83,7 +87,7 @@ class Opcode(object):
     IR that the interpreter will execute/optimize bytecode for
     """
 
-    def __init__(self, op, offset=0, arg=None):
+    def __init__(self, op, offset=0, arg=0):
         self.op = op
         self.offset = offset
         self.arg = arg
@@ -114,6 +118,16 @@ def parse(source):
 
         if opcode == OP_OPEN_JMP:
 
+            # Let's look for OP_CLEAR loops
+            if pc < (size - 3): # [+] or [-] need to be able to do +3
+                clear_instruction = code[pc:pc+3]
+                if clear_instruction in ["[+]", "[-]"]:
+                    opcodes.append(Opcode(OP_CLEAR, offset=mptr))
+                    pc += 3
+                    mptr = 0
+                    continue # continue since 
+
+
             # If we are doing a loop to increment/decrement our memory ptr we
             # can replace this with a OP_MOVE
             if mptr != 0:
@@ -141,6 +155,8 @@ def parse(source):
 
         # Handles the OP_RIGHT/OP_LEFT and OP_ADD/OP_SUB
         # Which are just coallescing optimizations
+        # Note: We don't need to create OP_RIGHT/OP_LEFT because we can just track them
+        # onto our OP_ADD and OP_SUB codes
         else:
             repeats = _get_repeated_count(code, pc)
             # If we are just moving, we can encode this into the offset directly
@@ -159,6 +175,25 @@ def parse(source):
 
     if len(loop_starts):
         raise RuntimeError("Umatched '[' found")
+
+    # We can optimize OP_CLEAR followed by OP_ADD or OP_SUB, let's coallesce these nodes
+    # into a single OP_CLEAR that uses the arg as the default store value
+    #
+
+    _i = 0
+    _opcodes = []
+    while _i < len(opcodes) - 1:
+        current = opcodes[_i]
+        nxt = opcodes[_i + 1]
+        if current == OP_CLEAR and (nxt == OP_ADD or nxt == OP_SUB):
+            current.arg += nxt.arg
+            _i += 2 # skip our nxt since it was coallesced
+        else:
+            _i += 1 # go pairwise next
+
+        _opcodes.append(current)
+
+    # opcodes = _opcodes
 
     return opcodes
 
@@ -216,14 +251,14 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
             memory[mptr] = (memory[mptr] - op.arg) % 256
 
         elif op.op == OP_OPEN_JMP:
-            mptr += op.offset  # should be 0 for now
+            mptr += op.offset
             if memory[mptr] == 0:
                 pc = op.arg
 
         elif op.op == OP_CLOSE_JMP:
-            mptr += op.offset  # should be 0 for now
+            mptr += op.offset
             if memory[mptr] != 0:
-                pc = op.arg - 1  # Because of the OP_MOVE we add
+                pc = op.arg - 1
 
         elif op.op == OP_OUT:
             mptr += op.offset
@@ -234,6 +269,16 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
             ch = do_read()
             if len(ch) > 0 and ord(ch) > 0:
                 memory[mptr] = ord(ch)
+
+        elif op.op == OP_CLEAR:
+            mptr += op.offset
+            if op.arg == 0:
+                memory[mptr] = 0
+            # Coallesced clears
+            elif op.arg < 0:
+                memory[mptr] = (memory[mptr] - op.arg) % 256
+            elif op.arg > 0:
+                memory[mptr] = (memory[mptr] + op.arg) % 256
 
         if(DEBUG):
             print(f"*op={op}\n* pc={pc}\n* dataptr={mptr}\n* Memory locations:")
@@ -246,9 +291,16 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
 
     return "".join(out_buffer) if buffer_output == True else None
 
+def main():
+    if len(sys.argv) == 2:
+        with open(sys.argv[1], 'r') as f:
+            opcodes = parse(f.read())
+            buffer = evaluate(opcodes, buffer_output=False)
+            print(buffer)
+    else:
+        print("Usage:", sys.argv[0], "filename")
 
-with open("examples/sierpinski.b", "r") as f:
-    x = f.read()
-    src = parse(x)
-    print([x.__str__() for x in src])
-    print(evaluate(src))
+
+if __name__ == "__main__":
+    main()
+
