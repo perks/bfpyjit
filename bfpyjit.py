@@ -1,5 +1,6 @@
 import os
 import sys
+from itertools import accumulate
 
 """
 +----+-------+---------------------+
@@ -15,6 +16,8 @@ import sys
 | ]  | Close | }                   |
 +----+-------+---------------------+
 """
+
+
 OP_ADD = 0
 OP_SUB = 1
 OP_RIGHT = 2
@@ -49,20 +52,103 @@ opcode_name_map = {
 }
 
 
+def instr_to_opcode(instr_char):
+    return instruction_opcode_map[instr_char]
+
+
+def opcode_to_string(opcode_num):
+    return opcode_name_map[opcode_num]
+
+
+def _get_repeated_count(source, start):
+    repeats = 0
+    match = source[start]
+    for char in source[start + 1 :]:
+        if match == char:
+            repeats += 1
+            match = char
+        else:
+            break
+
+    return repeats
+
+
 class Opcode(object):
     """
     IR that the interpreter will execute/optimize bytecode for
     """
 
-    def __init__(self, op, value=0, jmp=None):
+    def __init__(self, op, offset=0, arg=None):
         self.op = op
-        self.value = value
-        self.jmp = jmp
+        self.offset = offset
+        self.arg = arg
 
     def __str__(self):
-        return f"{opcode_name_map[self.op]} {self.value} {self.jmp if self.jmp else ''}"
+        name = opcode_to_string(self.op)
+        return (
+            f"{name} {self.offset} {self.arg if self.arg else ''}"
+        )
 
-x = Opcode(OP_OUT)
-print(x)
+
+def cleanup(source):
+    return "".join(filter(lambda x: x in instruction_opcode_map.keys(), source))
+
+
+def buildbracemap(code):
+    temp_bracestack, bracemap = [], {}
+
+    for position, command in enumerate(code):
+        if command == "[":
+            temp_bracestack.append(position)
+        if command == "]":
+            start = temp_bracestack.pop()
+            bracemap[start] = position
+            bracemap[position] = start
+    return bracemap
+
+
+def parse(source):
+    code = cleanup(source)
+    jmp_table = buildbracemap(code)
+    opcodes = []
+    size = len(code)
+
+    pc = 0  # Instruction pointer
+    mptr = 0  # Pointer to memory
+
+    while pc < size:
+        opcode = instr_to_opcode(code[pc])
+
+        if opcode in [OP_OPEN_JMP, OP_CLOSE_JMP]:
+            _arg = jmp_table[pc] if pc in jmp_table else None
+            opcodes.append(Opcode(opcode, offset=0, arg=_arg))
+        elif opcode in [OP_IN, OP_OUT]:
+            opcodes.append(Opcode(opcode, offset=mptr))
+        # Handles the OP_RIGHT/OP_LEFT and OP_ADD/OP_SUB
+        # Which are just coallescing optimizations
+        else:
+            repeats = _get_repeated_count(code, pc)
+            # If we are just moving, we can encode this into the offset directly
+            # for other opcodes, no need to gen opcodes
+            if opcode == OP_LEFT:
+                mptr -= repeats + 1
+            elif opcode == OP_RIGHT:
+                mptr += repeats + 1
+            # Generate the
+            else:
+                opcodes.append(Opcode(opcode, offset=mptr, arg=repeats + 1))
+                mptr = 0
+            pc += repeats
+
+        pc += 1
+
+    return opcodes
+
+
+with open('examples/test.bf', 'r') as f:
+    x = f.read()
+    src = parse(x)
+    print([x.__str__() for x in src])
+
 
 
