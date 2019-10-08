@@ -3,6 +3,8 @@ import sys
 from itertools import accumulate
 from collections import defaultdict
 
+DEBUG = True
+
 """
 +----+-------+---------------------+
 | BF |  IR   |          C          |
@@ -86,31 +88,16 @@ class Opcode(object):
 
     def __str__(self):
         name = opcode_to_string(self.op)
-        return (
-            f"{name} {self.offset} {self.arg if self.arg else ''}"
-        )
+        return f"{name} {self.offset} {self.arg if self.arg else ''}"
 
 
 def cleanup(source):
     return "".join(filter(lambda x: x in instruction_opcode_map.keys(), source))
 
 
-def buildbracemap(code):
-    temp_bracestack, bracemap = [], {}
-
-    for position, command in enumerate(code):
-        if command == "[":
-            temp_bracestack.append(position)
-        if command == "]":
-            start = temp_bracestack.pop()
-            bracemap[start] = position
-            bracemap[position] = start
-    return bracemap
-
-
 def parse(source):
     code = cleanup(source)
-    jmp_table = buildbracemap(code)
+    loop_starts = []
     opcodes = []
     size = len(code)
 
@@ -121,10 +108,25 @@ def parse(source):
         opcode = instr_to_opcode(code[pc])
 
         if opcode in [OP_OPEN_JMP, OP_CLOSE_JMP]:
-            _arg = jmp_table[pc] if pc in jmp_table else None
-            opcodes.append(Opcode(opcode, offset=0, arg=_arg))
+            if opcode == OP_OPEN_JMP:
+                # If we get a loop start, record this to be popped
+                loop_starts.append(len(opcodes))
+                # Our jmp arg will be filled in when encountering the next
+                # CLOSE_JMP
+                opcodes.append(Opcode(OP_OPEN_JMP))
+
+            elif opcode == OP_CLOSE_JMP:
+                if not len(loop_starts):
+                    raise RuntimeError("Unmatched ']' found")
+                loop_start = loop_starts.pop()
+                loop_end = len(opcodes)
+                opcodes[loop_start].arg = loop_end
+
+                opcodes.append(Opcode(OP_CLOSE_JMP, offset=mptr, arg=loop_start))
+
         elif opcode in [OP_IN, OP_OUT]:
             opcodes.append(Opcode(opcode, offset=mptr))
+
         # Handles the OP_RIGHT/OP_LEFT and OP_ADD/OP_SUB
         # Which are just coallescing optimizations
         else:
@@ -145,6 +147,7 @@ def parse(source):
 
     return opcodes
 
+
 def evaluate(opcodes, data_input=None, buffer_output=True):
 
     stdin = None
@@ -155,7 +158,7 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
     memory = defaultdict(int)
     size = len(opcodes)
     out_buffer = []
-    
+
     pc, mptr = 0, 0
 
     syswrite = sys.stdout.write
@@ -175,7 +178,7 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
         try:
             read_in = stdin.pop()
         except:
-            return ''
+            return ""
 
         return read_in
 
@@ -186,11 +189,7 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
 
         op = opcodes[pc]
 
-
-
-
-
-        if op.op ==  OP_ADD:
+        if op.op == OP_ADD:
             mptr += op.offset
             memory[mptr] = (memory[mptr] + op.arg) % 256
 
@@ -201,14 +200,14 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
         elif op.op == OP_OPEN_JMP:
             if op.offset != 0:
                 print("Whoops")
-            mptr += op.offset # should be 0 for now
+            mptr += op.offset  # should be 0 for now
             if memory[mptr] == 0:
                 pc = op.arg
 
         elif op.op == OP_CLOSE_JMP:
             if op.offset != 0:
                 print("Whoops")
-            mptr += op.offset # should be 0 for now
+            mptr += op.offset  # should be 0 for now
             if memory[mptr] != 0:
                 pc = op.arg - 1  # - 1?
 
@@ -222,23 +221,20 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
             if len(ch) > 0 and ord(ch) > 0:
                 memory[mptr] = ord(ch)
 
-        print(f"*op={op}\n* pc={pc}\n* dataptr={mptr}\n* Memory locations:")
+        if(DEBUG):
+            print(f"*op={op}\n* pc={pc}\n* dataptr={mptr}\n* Memory locations:")
 
-        for k, v in memory.items():
-            print(f"\t\t*{k}: {v}")
+            for k, v in memory.items():
+                print(f"\t\t*{k}: {v}")
 
-        print("\n")
+            print("\n")
         pc += 1
-
 
     return "".join(out_buffer) if buffer_output == True else None
 
 
-with open('examples/test.bf', 'r') as f:
+with open("examples/test.bf", "r") as f:
     x = f.read()
     src = parse(x)
     print([x.__str__() for x in src])
     print(evaluate(src))
-
-
-
