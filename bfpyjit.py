@@ -1,6 +1,7 @@
 import os
 import sys
 from itertools import accumulate
+from collections import defaultdict
 
 """
 +----+-------+---------------------+
@@ -144,11 +145,100 @@ def parse(source):
 
     return opcodes
 
+def evaluate(opcodes, data_input=None, buffer_output=True):
+
+    stdin = None
+    if data_input != None:
+        stdin = list(reversed(data_input))
+
+    # memory = bytearray(30000)
+    memory = defaultdict(int)
+    size = len(opcodes)
+    out_buffer = []
+    
+    pc, mptr = 0, 0
+
+    syswrite = sys.stdout.write
+    sysflush = sys.stdout.flush
+
+    def write_stdout(c):
+        syswrite(c)
+        sysflush()
+
+    def write_buffer(c):
+        out_buffer.append(c)
+
+    def read_stdin():
+        return os.read(0, 1)
+
+    def read_buffer():
+        try:
+            read_in = stdin.pop()
+        except:
+            return ''
+
+        return read_in
+
+    do_write = write_buffer if buffer_output else write_stdout
+    do_read = read_stdin if stdin == None else read_buffer
+
+    while pc < size:
+
+        op = opcodes[pc]
+
+
+
+
+
+        if op.op ==  OP_ADD:
+            mptr += op.offset
+            memory[mptr] = (memory[mptr] + op.arg) % 256
+
+        elif op.op == OP_SUB:
+            mptr += op.offset
+            memory[mptr] = (memory[mptr] - op.arg) % 256
+
+        elif op.op == OP_OPEN_JMP:
+            if op.offset != 0:
+                print("Whoops")
+            mptr += op.offset # should be 0 for now
+            if memory[mptr] == 0:
+                pc = op.arg
+
+        elif op.op == OP_CLOSE_JMP:
+            if op.offset != 0:
+                print("Whoops")
+            mptr += op.offset # should be 0 for now
+            if memory[mptr] != 0:
+                pc = op.arg - 1  # - 1?
+
+        elif op.op == OP_OUT:
+            mptr += op.offset
+            do_write(chr(memory[mptr]))
+
+        elif op.op == OP_IN:
+            mptr += op.offset
+            ch = do_read()
+            if len(ch) > 0 and ord(ch) > 0:
+                memory[mptr] = ord(ch)
+
+        print(f"*op={op}\n* pc={pc}\n* dataptr={mptr}\n* Memory locations:")
+
+        for k, v in memory.items():
+            print(f"\t\t*{k}: {v}")
+
+        print("\n")
+        pc += 1
+
+
+    return "".join(out_buffer) if buffer_output == True else None
+
 
 with open('examples/test.bf', 'r') as f:
     x = f.read()
     src = parse(x)
     print([x.__str__() for x in src])
+    print(evaluate(src))
 
 
 
