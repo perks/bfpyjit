@@ -385,7 +385,6 @@ def main():
             opcodes = parse(f.read())
             for op in opcodes:
                 print(op)
-            input()
             buffer = evaluate(opcodes, buffer_output=False)
     else:
         print("Usage:", sys.argv[0], "filename")
