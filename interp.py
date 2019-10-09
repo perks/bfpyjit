@@ -271,25 +271,6 @@ def parse(source):
     if len(loop_starts):
         raise RuntimeError("Umatched '[' found")
 
-    # We can optimize OP_CLEAR followed by OP_ADD or OP_SUB, let's coallesce these nodes
-    # into a single OP_CLEAR that uses the arg as the default store value
-    #
-
-    _i = 0
-    _opcodes = []
-    while _i < len(opcodes) - 1:
-        current = opcodes[_i]
-        nxt = opcodes[_i + 1]
-        if current == OP_CLEAR and (nxt == OP_ADD or nxt == OP_SUB):
-            current.arg += nxt.arg
-            _i += 2 # skip our nxt since it was coallesced
-        else:
-            _i += 1 # go pairwise next
-
-        _opcodes.append(current)
-
-    # opcodes = _opcodes
-
     return opcodes
 
 
@@ -299,8 +280,8 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
     if data_input != None:
         stdin = list(reversed(data_input))
 
-    # memory = bytearray(30000)
-    memory = defaultdict(int)
+    memory = bytearray(30000)
+    # memory = defaultdict(int)
     size = len(opcodes)
     out_buffer = []
 
@@ -367,12 +348,7 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
 
         elif op.op == OP_CLEAR:
             mptr += op.offset
-            if op.arg == 0:
-                memory[mptr] = 0
-            # Coallesced clears
-            elif op.arg < 0: memory[mptr] = (memory[mptr] - op.arg) % 256
-            elif op.arg > 0:
-                memory[mptr] = (memory[mptr] + op.arg) % 256
+            memory[mptr] = 0
 
         elif op.op == OP_COPY:
             mptr += op.offset
@@ -384,7 +360,7 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
 
         elif op.op == OP_SCANR:
             mptr += op.offset
-            while mptr > 0 and memory[mptr] != 0:
+            while mptr > 0 and memory[mptr] != 1:
                 mptr -= 1
 
         elif op.op == OP_SCANL:
@@ -407,8 +383,9 @@ def main():
     if len(sys.argv) == 2:
         with open(sys.argv[1], 'r') as f:
             opcodes = parse(f.read())
-            # for op in opcodes:
-            #     print(op)
+            for op in opcodes:
+                print(op)
+            input()
             buffer = evaluate(opcodes, buffer_output=False)
     else:
         print("Usage:", sys.argv[0], "filename")
