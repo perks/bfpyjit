@@ -125,11 +125,15 @@ def execute(instructions):
             # CreateIntCast(element, int32, isSigned=False, name="element_i32_)
             # zext is unsigned
             element_i8 = irb.zext(element, int8, "element_i8_")
-
             ir_putchar(irb, element_i8)
 
         elif inst == ',':
-            ir_getchar(irb)
+            user_input = ir_getchar(irb)
+            # Just in case lets zext
+            user_input_i8 = irb.zext(user_input, int8, "user_input_i8_")
+            dataptr = irb.load(dataptr_addr, "dataptr")
+            element_addr = irb.gep(memory, [dataptr], inbounds=True, name="element_addr")
+            irb.store(user_input_i8, element_addr)
 
         elif inst == '[':
             dataptr = irb.load(dataptr_addr, "dataptr")
