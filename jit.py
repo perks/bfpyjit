@@ -194,9 +194,9 @@ def execute(instructions, optimize=True, optlevel=2, verbose=False, log=False):
 
         if verbose:
             print("======= Optimized LLVM IR")
+            print(str(llvm_module))
         if log:
             with open(f"{log_prefix}_optimized.ir", "w") as f:
-                print(str(llvm_module))
                 f.write(str(llvm_module))
 
     tm = llvm.Target.from_default_triple().create_target_machine()
@@ -214,6 +214,7 @@ def execute(instructions, optimize=True, optlevel=2, verbose=False, log=False):
         cfunc = CFUNCTYPE(c_int32)(cfptr)
 
         res = cfunc()
+        input()
 
 
 def main():
