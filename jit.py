@@ -14,6 +14,7 @@ int32 = ir.IntType(32)
 int64 = ir.IntType(64)
 int8ptr = int8.as_pointer()
 
+
 def cleanup(source):
     return "".join(
         filter(lambda x: x in ["+", "-", "[", "]", ",", ".", "<", ">"], source)
@@ -26,24 +27,25 @@ def ir_putchar(builder, char):
 
     fn_type = ir.FunctionType(int32, [ir.IntType(8)])
     try:
-        fn = mod.get_global('putchar')
+        fn = mod.get_global("putchar")
     except KeyError:
-        fn = ir.Function(mod, fn_type, name='putchar')
+        fn = ir.Function(mod, fn_type, name="putchar")
 
     return builder.call(fn, [char])
 
-def ir_getchar(builder,):
+
+def ir_getchar(builder):
     mod = builder.module
     fn_type = ir.FunctionType(int8, [])
     try:
-        fn = mod.get_global('getchar')
+        fn = mod.get_global("getchar")
     except KeyError:
-        fn = ir.Function(mod, fn_type, name='getchar')
+        fn = ir.Function(mod, fn_type, name="getchar")
 
     return builder.call(fn, [])
 
-def execute(instructions, optimize=True,  optlevel= 2, verbose=False, log=False):
 
+def execute(instructions, optimize=True, optlevel=2, verbose=False, log=False):
 
     if log:
         log_prefix = os.path.basename(sys.argv[1])
@@ -76,7 +78,6 @@ def execute(instructions, optimize=True,  optlevel= 2, verbose=False, log=False)
     # As per spec, this starts at 0
     irb.store(int32(0), dataptr_addr)
 
-
     # We don't translate from opcode -> llvmir because we want to take advantage
     # of internal optimizations from LLVM
     #
@@ -87,50 +88,60 @@ def execute(instructions, optimize=True,  optlevel= 2, verbose=False, log=False)
 
         # These 'inefficient' incremental IR emissions are actually good because
         # they let the optimizer go HAM instead of us trying to preempt it
-        if inst == '>':
+        if inst == ">":
             dataptr = irb.load(dataptr_addr, "dataptr")
             inc_dataptr = irb.add(dataptr, int32(1), "inc_dataptr")
             irb.store(inc_dataptr, dataptr_addr)
 
-        elif inst == '<':
+        elif inst == "<":
             dataptr = irb.load(dataptr_addr, "dataptr")
             dec_dataptr = irb.sub(dataptr, int32(1), "dec_dataptr")
             irb.store(dec_dataptr, dataptr_addr)
 
-        elif inst == '+':
+        elif inst == "+":
             dataptr = irb.load(dataptr_addr, "dataptr")
-            element_addr = irb.gep(memory, [dataptr], inbounds=True, name="element_addr")
+            element_addr = irb.gep(
+                memory, [dataptr], inbounds=True, name="element_addr"
+            )
             element = irb.load(element_addr, "element")
             inc_element = irb.add(element, int8(1), "inc_element")
             irb.store(inc_element, element_addr)
 
-        elif inst == '-':
+        elif inst == "-":
             dataptr = irb.load(dataptr_addr, "dataptr")
-            element_addr = irb.gep(memory, [dataptr], inbounds=True, name="element_addr")
+            element_addr = irb.gep(
+                memory, [dataptr], inbounds=True, name="element_addr"
+            )
             element = irb.load(element_addr, "element")
             dec_element = irb.sub(element, int8(1), "dec_element")
             irb.store(dec_element, element_addr)
 
-        elif inst == '.':
+        elif inst == ".":
             dataptr = irb.load(dataptr_addr, "dataptr")
-            element_addr = irb.gep(memory, [dataptr], inbounds=True, name="element_addr")
+            element_addr = irb.gep(
+                memory, [dataptr], inbounds=True, name="element_addr"
+            )
             element = irb.load(element_addr, "element")
             # CreateIntCast(element, int32, isSigned=False, name="element_i32_)
             # zext is unsigned
             element_i8 = irb.zext(element, int8, "element_i8_")
             ir_putchar(irb, element_i8)
 
-        elif inst == ',':
+        elif inst == ",":
             user_input = ir_getchar(irb)
             # Just in case lets zext
             user_input_i8 = irb.zext(user_input, int8, "user_input_i8_")
             dataptr = irb.load(dataptr_addr, "dataptr")
-            element_addr = irb.gep(memory, [dataptr], inbounds=True, name="element_addr")
+            element_addr = irb.gep(
+                memory, [dataptr], inbounds=True, name="element_addr"
+            )
             irb.store(user_input_i8, element_addr)
 
-        elif inst == '[':
+        elif inst == "[":
             dataptr = irb.load(dataptr_addr, "dataptr")
-            element_addr = irb.gep(memory, [dataptr], inbounds=True, name="element_addr")
+            element_addr = irb.gep(
+                memory, [dataptr], inbounds=True, name="element_addr"
+            )
             element = irb.load(element_addr, "element")
             cmp = irb.icmp_unsigned("==", element, int8(0), "compare_zero")
 
@@ -142,11 +153,13 @@ def execute(instructions, optimize=True,  optlevel= 2, verbose=False, log=False)
             left_stack.append((loop_body_block, post_loop_block))
             irb.position_at_end(loop_body_block)
 
-        elif inst == ']':
+        elif inst == "]":
             loop_body_block, post_loop_block = left_stack.pop()
 
             dataptr = irb.load(dataptr_addr, "dataptr")
-            element_addr = irb.gep(memory, [dataptr], inbounds=True, name="element_addr")
+            element_addr = irb.gep(
+                memory, [dataptr], inbounds=True, name="element_addr"
+            )
             element = irb.load(element_addr, "element")
             cmp = irb.icmp_unsigned("!=", element, int8(0), "compare_zero")
 
@@ -155,18 +168,15 @@ def execute(instructions, optimize=True,  optlevel= 2, verbose=False, log=False)
 
         pc += 1
 
-
     # Complete our function, could return void but keeping with unixisms
     irb.ret(int32(0))
 
-
     if verbose:
-        print('====== Unoptimized LLVM IR ')
+        print("====== Unoptimized LLVM IR ")
         print(module)
     if log:
-        with open(f'{log_prefix}_unoptimized.ir', 'w') as f:
+        with open(f"{log_prefix}_unoptimized.ir", "w") as f:
             f.write(str(module))
-
 
     llvm_module = llvm.parse_assembly(str(module))
 
@@ -183,9 +193,9 @@ def execute(instructions, optimize=True,  optlevel= 2, verbose=False, log=False)
         pm.run(llvm_module)
 
         if verbose:
-            print('======= Optimized LLVM IR')
+            print("======= Optimized LLVM IR")
         if log:
-            with open(f'{log_prefix}_optimized.ir', 'w') as f:
+            with open(f"{log_prefix}_optimized.ir", "w") as f:
                 print(str(llvm_module))
                 f.write(str(llvm_module))
 
@@ -197,13 +207,14 @@ def execute(instructions, optimize=True,  optlevel= 2, verbose=False, log=False)
             print("============ Assembly")
             print(tm.emit_assembly(llvm_module))
         if log:
-            with open(f"{log_prefix}_machine.as", 'w') as f:
+            with open(f"{log_prefix}_machine.as", "w") as f:
                 f.write(tm.emit_assembly(llvm_module))
 
-        cfptr = ee.get_function_address('bf_jit_exec')
+        cfptr = ee.get_function_address("bf_jit_exec")
         cfunc = CFUNCTYPE(c_int32)(cfptr)
 
         res = cfunc()
+
 
 def main():
     if len(sys.argv) == 2:

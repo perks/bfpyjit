@@ -61,7 +61,7 @@ opcode_name_map = {
     OP_CLOSE_JMP: "closejmp",
     OP_MOVE: "move",
     OP_CLEAR: "clear",
-    OP_COPY: "copy"
+    OP_COPY: "copy",
 }
 
 
@@ -104,8 +104,10 @@ class Opcode(object):
         name = opcode_to_string(self.op)
         return f" * op={name}\n * offset={self.offset}\n * arg={self.arg}"
 
+
 def cleanup(source):
     return "".join(filter(lambda x: x in instruction_opcode_map.keys(), source))
+
 
 def _is_clearloop(code, size, index, mptr):
     """
@@ -118,6 +120,7 @@ def _is_clearloop(code, size, index, mptr):
             return [Opcode(OP_CLEAR, mptr)], 3
 
     return [], 0
+
 
 def _is_scanloop(code, size, index, mptr):
     """
@@ -134,6 +137,7 @@ def _is_scanloop(code, size, index, mptr):
             return [Opcode(OP_SCANL, mptr)], 3
 
     return [], 0
+
 
 def _is_copyloop(code, size, index, mptr):
     # Copy/multiply loop must start with a decrement
@@ -189,10 +193,9 @@ def _is_copyloop(code, size, index, mptr):
 
     return ret, (i - index) + 1
 
+
 def run_loop_optimizers(code, size, index, mptr):
-    loop_opts = [
-        _is_clearloop, _is_copyloop, _is_scanloop
-    ]
+    loop_opts = [_is_clearloop, _is_copyloop, _is_scanloop]
 
     for opt in loop_opts:
         optcode_list, n_instructions = opt(code, size, index, mptr)
@@ -200,6 +203,7 @@ def run_loop_optimizers(code, size, index, mptr):
             return optcode_list, n_instructions
 
     return [], 0
+
 
 def parse(source):
     code = cleanup(source)
@@ -221,7 +225,6 @@ def parse(source):
                 pc += n_instructions
                 mptr = 0
                 continue
-
 
             # If we are doing a loop to increment/decrement our memory ptr we
             # can replace this with a OP_MOVE
@@ -368,7 +371,7 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
             while mptr < (size - 1) and memory[mptr] != 0:
                 mptr += 1
 
-        if(DEBUG):
+        if DEBUG:
             print(f"*op={op}\n* pc={pc}\n* dataptr={mptr}\n* Memory locations:")
 
             for k, v in memory.items():
@@ -379,9 +382,10 @@ def evaluate(opcodes, data_input=None, buffer_output=True):
 
     return "".join(out_buffer) if buffer_output == True else None
 
+
 def main():
     if len(sys.argv) == 2:
-        with open(sys.argv[1], 'r') as f:
+        with open(sys.argv[1], "r") as f:
             opcodes = parse(f.read())
             for op in opcodes:
                 print(op)
@@ -392,4 +396,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
