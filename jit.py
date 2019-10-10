@@ -42,8 +42,11 @@ def ir_getchar(builder,):
 
     return builder.call(fn, [])
 
-def execute(instructions):
+def execute(instructions, optimize=True,  optlevel= 2, verbose=False, log=False):
 
+
+    if log:
+        log_prefix = os.path.basename(sys.argv[1])
 
     MEMORY_SIZE = 30000
 
@@ -73,16 +76,6 @@ def execute(instructions):
     # As per spec, this starts at 0
     irb.store(int32(0), dataptr_addr)
 
-
-    syswrite = sys.stdout.write
-    sysflush = sys.stdout.flush
-
-    def write_stdout(c):
-        syswrite(c)
-        sysflush()
-
-    def read_stdin():
-        return os.read(0, 1)
 
     # We don't translate from opcode -> llvmir because we want to take advantage
     # of internal optimizations from LLVM
@@ -163,32 +156,60 @@ def execute(instructions):
         pc += 1
 
 
+    # Complete our function, could return void but keeping with unixisms
     irb.ret(int32(0))
-    print('====== LLVM IR ')
-    print(module)
+
+
+    if verbose:
+        print('====== Unoptimized LLVM IR ')
+        print(module)
+    if log:
+        with open(f'{log_prefix}_unoptimized.ir', 'w') as f:
+            f.write(str(module))
 
 
     llvm_module = llvm.parse_assembly(str(module))
+
+    # Start our optimization passes
+    if optimize:
+        pmb = llvm.create_pass_manager_builder()
+        # https://llvmlite.readthedocs.io/en/latest/user-guide/binding/optimization-passes.html#llvmlite.binding.PassManagerBuilder
+        pmb.opt_level = optlevel
+        # Play around with adding these, BF might not be able to take advantage
+        # pmb.loop_vectorize = True
+        # pmb.slp_vectorize = True
+        pm = llvm.create_module_pass_manager()
+        pmb.populate(pm)
+        pm.run(llvm_module)
+
+        if verbose:
+            print('======= Optimized LLVM IR')
+        if log:
+            with open(f'{log_prefix}_optimized.ir', 'w') as f:
+                print(str(llvm_module))
+                f.write(str(llvm_module))
 
     tm = llvm.Target.from_default_triple().create_target_machine()
     with llvm.create_mcjit_compiler(llvm_module, tm) as ee:
         ee.finalize_object()
 
-        print("============Assembly")
-        print(tm.emit_assembly(llvm_module))
+        if verbose:
+            print("============ Assembly")
+            print(tm.emit_assembly(llvm_module))
+        if log:
+            with open(f"{log_prefix}_machine.as", 'w') as f:
+                f.write(tm.emit_assembly(llvm_module))
 
         cfptr = ee.get_function_address('bf_jit_exec')
         cfunc = CFUNCTYPE(c_int32)(cfptr)
 
         res = cfunc()
 
-    # Set the return type on the entry point function
-
 def main():
     if len(sys.argv) == 2:
         with open(sys.argv[1], "r") as f:
             source = cleanup(f.read())
-            execute(source)
+            execute(source, optimize=True)
     else:
         print("Usage:", sys.argv[0], "filename")
 
